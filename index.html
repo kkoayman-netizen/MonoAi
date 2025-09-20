@@ -123,7 +123,7 @@
         
         .language-select {
             flex: 1;
-            min-width: 250px;
+            min-width: 200px;
         }
         
         select {
@@ -213,6 +213,26 @@
             text-align: right;
         }
         
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+        
+        .action-buttons button {
+            padding: 12px 20px;
+            font-size: 1rem;
+        }
+        
+        .action-buttons button.secondary {
+            background: var(--gray);
+        }
+        
+        .action-buttons button.secondary:hover {
+            background: #5a6268;
+        }
+        
         .features {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -289,6 +309,10 @@
                 justify-content: center;
             }
             
+            .action-buttons {
+                flex-direction: column;
+            }
+            
             .features {
                 grid-template-columns: 1fr;
             }
@@ -312,8 +336,10 @@
                 
                 <div class="controls">
                     <div class="language-select">
-                        <select id="target-language">
-                            <option value="">Select Target Language</option>
+                        <label for="source-language">From:</label>
+                        <select id="source-language">
+                            <option value="auto">Auto Detect</option>
+                            <option value="en">English</option>
                             <option value="es">Spanish</option>
                             <option value="fr">French</option>
                             <option value="de">German</option>
@@ -327,6 +353,24 @@
                         </select>
                     </div>
                     
+                    <div class="language-select">
+                        <label for="target-language">To:</label>
+                        <select id="target-language">
+                            <option value="">Select Target Language</option>
+                            <option value="es">Spanish</option>
+                            <option value="fr">French</option>
+                            <option value="de">German</option>
+                            <option value="zh">Chinese</option>
+                            <option value="ja">Japanese</option>
+                            <option value="ru">Russian</option>
+                            <option value="ar">Arabic</option>
+                            <option value="hi">Hindi</option>
+                            <option value="pt">Portuguese</option>
+                            <option value="it">Italian</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    
                     <button id="translate-btn">
                         <i class="fas fa-exchange-alt"></i> Translate
                     </button>
@@ -337,6 +381,15 @@
                 <h2 class="section-title"><i class="fas fa-globe"></i> Translation Result</h2>
                 <div id="output" class="output">Your translation will appear here...</div>
                 <div class="translation-info" id="translation-info"></div>
+                
+                <div class="action-buttons">
+                    <button id="speak-btn" class="secondary" disabled>
+                        <i class="fas fa-volume-up"></i> Speak Translation
+                    </button>
+                    <button id="copy-btn" class="secondary">
+                        <i class="fas fa-copy"></i> Copy Text
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -379,41 +432,42 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const inputText = document.getElementById('input-text');
+            const sourceLanguage = document.getElementById('source-language');
             const targetLanguage = document.getElementById('target-language');
             const translateBtn = document.getElementById('translate-btn');
             const output = document.getElementById('output');
             const translationInfo = document.getElementById('translation-info');
+            const speakBtn = document.getElementById('speak-btn');
+            const copyBtn = document.getElementById('copy-btn');
             
             // Focus on input text when page loads
             inputText.focus();
             
-            // Add event listener to the translate button
+            // Add event listeners
             translateBtn.addEventListener('click', translateText);
-            
-            // Also translate when the selected language changes if there's text
-            targetLanguage.addEventListener('change', function() {
-                if (inputText.value.trim() !== '' && targetLanguage.value !== '') {
-                    translateText();
-                }
-            });
+            speakBtn.addEventListener('click', speakTranslation);
+            copyBtn.addEventListener('click', copyTranslation);
             
             // Function to handle translation
             function translateText() {
                 const text = inputText.value.trim();
-                const lang = targetLanguage.value;
+                const sourceLang = sourceLanguage.value;
+                const targetLang = targetLanguage.value;
                 
                 // Validate input
                 if (text === '') {
                     output.innerHTML = 'Please enter some text to translate.';
                     output.classList.add('error');
                     translationInfo.textContent = '';
+                    speakBtn.disabled = true;
                     return;
                 }
                 
-                if (lang === '') {
+                if (targetLang === '') {
                     output.innerHTML = 'Please select a target language.';
                     output.classList.add('error');
                     translationInfo.textContent = '';
+                    speakBtn.disabled = true;
                     return;
                 }
                 
@@ -423,7 +477,10 @@
                 output.classList.add('loading');
                 
                 // Use MyMemory Translation API
-                const apiUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}`;
+                const langPair = sourceLang === 'auto' ? 
+                    `|${targetLang}` : `${sourceLang}|${targetLang}`;
+                
+                const apiUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
                 
                 fetch(apiUrl)
                     .then(response => {
@@ -437,7 +494,16 @@
                         
                         if (data.responseStatus === 200) {
                             output.textContent = data.responseData.translatedText;
-                            translationInfo.textContent = `Translated from English to ${targetLanguage.options[targetLanguage.selectedIndex].text}`;
+                            
+                            // Detect the actual source language if auto-detection was used
+                            const detectedSourceLang = sourceLang === 'auto' && data.responseData.match > 0 ? 
+                                data.responseData.match.split('-')[0] : sourceLang;
+                                
+                            const sourceLangName = getLanguageName(detectedSourceLang);
+                            const targetLangName = getLanguageName(targetLang);
+                            
+                            translationInfo.textContent = `Translated from ${sourceLangName} to ${targetLangName}`;
+                            speakBtn.disabled = false;
                         } else {
                             throw new Error(data.responseDetails || 'Translation failed');
                         }
@@ -447,31 +513,85 @@
                         output.classList.add('error');
                         output.innerHTML = `Error: ${error.message}. Please try again.`;
                         translationInfo.textContent = '';
+                        speakBtn.disabled = true;
                     });
             }
             
-            // Add example translations when language is selected without text
-            targetLanguage.addEventListener('change', function() {
-                if (inputText.value.trim() === '') {
-                    const examples = {
-                        'es': '¡Hola! Bienvenido a nuestro servicio de traducción profesional.',
-                        'fr': 'Bonjour! Bienvenue dans notre service de traduction professionnelle.',
-                        'de': 'Hallo! Willkommen bei unserem professionellen Übersetzungsservice.',
-                        'zh': '你好！欢迎使用我们的专业翻译服务。',
-                        'ja': 'こんにちは！プロの翻訳サービスへようこそ。',
-                        'ru': 'Привет! Добро пожаловать в наш профессиональный сервис перевода.',
-                        'ar': 'مرحبًا! مرحبًا بك في خدمة الترجمة الاحترافية الخاصة بنا.',
-                        'hi': 'नमस्ते! हमारी पेशेवर अनुवाद सेवा में आपका स्वागत है।',
-                        'pt': 'Olá! Bem-vindo ao nosso serviço de tradução profissional.',
-                        'it': 'Ciao! Benvenuto nel nostro servizio di traduzione professionale.'
-                    };
-                    
-                    if (examples[targetLanguage.value]) {
-                        output.textContent = examples[targetLanguage.value];
-                        translationInfo.textContent = `Example translation from English to ${targetLanguage.options[targetLanguage.selectedIndex].text}`;
-                    }
+            // Function to speak the translation
+            function speakTranslation() {
+                const translatedText = output.textContent;
+                
+                if (!translatedText || translatedText === 'Your translation will appear here...') {
+                    return;
                 }
-            });
+                
+                // Get the target language code for speech synthesis
+                const targetLang = targetLanguage.value;
+                
+                // Check if the browser supports speech synthesis
+                if ('speechSynthesis' in window) {
+                    const speech = new SpeechSynthesisUtterance();
+                    speech.text = translatedText;
+                    speech.volume = 1;
+                    speech.rate = 1;
+                    speech.pitch = 1;
+                    
+                    // Set the language if available
+                    try {
+                        speech.lang = targetLang;
+                    } catch (e) {
+                        console.warn('Could not set language for speech synthesis', e);
+                    }
+                    
+                    window.speechSynthesis.speak(speech);
+                } else {
+                    alert('Your browser does not support text-to-speech functionality.');
+                }
+            }
+            
+            // Function to copy translation to clipboard
+            function copyTranslation() {
+                const translatedText = output.textContent;
+                
+                if (!translatedText || translatedText === 'Your translation will appear here...') {
+                    return;
+                }
+                
+                navigator.clipboard.writeText(translatedText)
+                    .then(() => {
+                        // Show temporary feedback
+                        const originalText = copyBtn.innerHTML;
+                        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                        
+                        setTimeout(() => {
+                            copyBtn.innerHTML = originalText;
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Failed to copy text: ', err);
+                        alert('Failed to copy text to clipboard.');
+                    });
+            }
+            
+            // Helper function to get language name from code
+            function getLanguageName(code) {
+                const languages = {
+                    'auto': 'Auto Detect',
+                    'en': 'English',
+                    'es': 'Spanish',
+                    'fr': 'French',
+                    'de': 'German',
+                    'zh': 'Chinese',
+                    'ja': 'Japanese',
+                    'ru': 'Russian',
+                    'ar': 'Arabic',
+                    'hi': 'Hindi',
+                    'pt': 'Portuguese',
+                    'it': 'Italian'
+                };
+                
+                return languages[code] || code;
+            }
         });
     </script>
 </body>
